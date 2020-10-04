@@ -1,3 +1,8 @@
 /Part1/*.trace
 /Part1/*.x
 /Part1/make.log
+/Part2/modules.order
+/Part2/Module.symvers
+/Part2/*.ko
+/Part2/*.o
+/Part2/*.mod.c
