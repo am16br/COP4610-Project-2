@@ -1,14 +1,13 @@
-#include <unistd.h>
-#include <sys/syscall.h>
-int main(){
-	unsigned int cpu, node;
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	syscall(SYS_getcpu, &cpu, &node, NULL);
-	return 0;
+#include <stdio.h>
+
+// Authors: Dylan McClure, Eliot Shea, Aidan Martin
+// Last Change: 03 October 2020
+
+int main(void) {
+    printf("Hello world\n");
+    fprintf(stderr, "Hello world\n");
+    printf("Hello world\n");
+    fprintf(stderr, "Hello world\n");
+    return 0;
 }
 
