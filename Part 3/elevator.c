@@ -39,6 +39,8 @@ struct task_struct* elevator_thread;
 
 static struct file_operations fops;
 
+struct mutex elevatorPassengers;
+struct mutex passengersList;
 /*
 struct passengers{
   int start_floor;
@@ -58,21 +60,46 @@ int elevator_run(void *data){
         break;
       case LOADING:
         ssleep(1);
-      //LOADING: sleep 1 second, unload if any current_passengers.final_floor=current_floor,
-        //    load to fill elevator, or if elevator=infected, until human next in line
+        //function to unload passengers from elevator passengers when destination==current_floor
+        //function to load elevatorPassengers from next in passengersList at current_floor
+          //check space available, elevator status (no humans if infected), right direction..
+
+        mutex_lock_interruptible(&elevatorPassengers);
+        //add to elevator
+        mutex_unlock(&elevatorPassengers);
+
+        mutex_lock_interruptible(&passengersList);
+        //add to list
+        mutex_unlock(&passengersList);
         break;
       case UP:
-        ssleep(2);
-      //UP: Check that current_floor != 10(change to DOWN), sleep 2 seconds,
-        //  current_floor++, check for unload, and load any if possible
+        if(current_floor == 10){
+          current_state = DOWN;
+          next_state = DOWN;
+          ssleep(2);
+          current_floor = current_floor - 1;
+        }else{
+          ssleep(2);
+          current_floor = current_floor + 1;
+        }
+        //load/unload check?
         break;
       case DOWN:
+        if(current_floor == 1){
+          current_state = UP;
+          next_state = UP;
+          ssleep(2);
+          current_floor = current_floor + 1;
+        }else{
+          ssleep(2);
+          current_floor = current_floor - 1;
+        }
         ssleep(2);
-      //DOWN: Check that current_floor != 1(change to UP), sleep 2 seconds,
-        //  current_floor--, check for unload, and load any if possible
+        //load/unload/idle check?
         break;
     }
   }
+
   return 0;
 }
 /**********************************************************/
@@ -104,14 +131,16 @@ char *getState(int current_state){
 
 char *printfloors(int current_floor){
   int i;
+  char f;
   sprintf("\n\n");
   for(ind = 10; ind > 0; ind--){
+    f = " ";
     if(current_floor == ind){
-      sprintf("[*] Floor %d:\t%d\t", ind, passengers_waiting[ind]);
+      f = "*"
     }
-    else{
-      sprintf("[ ] Floor %d:\t%d\t", ind, passengers_waiting[ind]);
-    }
+    sprintf("[%s] Floor %d:\t%d\t", f, ind, passengers_waiting);
+    /*
+    //loop through mutex?
     for(i = 0; i < passengers_waiting[ind]; i++){
       if(passengers_waiting[ind][i] == 0){
         sprintf("X");
@@ -120,7 +149,9 @@ char *printfloors(int current_floor){
         sprintf("|");
       }
     }
+    */
     sprintf("\n\n");
+
   }
   sprintf("( '|' for human, 'X' for zombie )\n");
 }
@@ -186,6 +217,8 @@ static int elevator_init(void) {
     remove_proc_entry(MODULE_NAME, NULL);
     return -ENOMEM;
   }
+  mutex_init(&elevatorPassengers);
+  mutex_init(&passengersList);
   elevator_thread = kthread_run(elevator_run, NULL, "Elevator Thread");
   if(IS_ERR(elevator_thread)){
     printk(KERN_WARNING "Error: ElevatorRun\n");
@@ -195,6 +228,8 @@ static int elevator_init(void) {
 }
 
 static void elevator_exit(void) {
+    mutex_destroy(&elevatorPassengers);
+    mutex_destroy(&passengersList);  
     kthread_stop(elevator_thread);
     remove_proc_entry(MODULE_NAME, NULL);
     printk(KERN_NOTICE "Removing /proc/%s.\n", MODULE_NAME);
