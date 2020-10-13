@@ -51,7 +51,7 @@ static int elevator_init(void) {
   return 0;
 }
 
-static int elevator_exit(void) {
+static int elevator_init(void) {
   STUB_start_elevator = NULL;
   STUB_issue_request = NULL;
   STUB_stop_elevator = NULL;
