@@ -26,6 +26,8 @@ MODULE_DESCRIPTION("Elevator simulator for scheduling algorithm");
 #define num_floors 10
 #define maxload 10
 
+struct mutex passenger_mutex;
+
 struct list_head floors[num_floors];
 
 typedef struct passenger {
@@ -49,8 +51,12 @@ long issue_request(int start_floor, int destination_floor, int type) {
   pass->start_floor = start_floor;
   pass->destination_floor = destination_floor;
   pass->type = type;
+  
+  mutex_lock(&passenger_mutex);
 
   list_add_tail(&pass->floor, &floors[start_floor]);
+
+  mutex_unlock(&passenger_mutex);
   printk(KERN_NOTICE "Passenger added: start=%d, dest=%d, type=%d\n", start_floor, destination_floor, type);
   return 0;
 }
@@ -70,7 +76,7 @@ static int elevator_init(void) {
   for (i = 0; i < num_floors; i++){
     INIT_LIST_HEAD(&floors[i]);
   }
-
+  mutex_init(&passenger_mutex);
   return 0;
 }
 
@@ -91,6 +97,7 @@ static void elevator_exit(void) {
       kfree(pass);
     }
   }
+  mutex_destroy(&passenger_mutex);
 }
 
 module_init(elevator_init);
