@@ -26,8 +26,18 @@ MODULE_DESCRIPTION("Elevator simulator for scheduling algorithm");
 #define num_floors 10
 #define maxload 10
 
+struct list_head floors[num_floors];
+
+typedef struct passenger {
+  struct list_head floor;
+  int start_floor;
+  int destination_floor;
+  int type;
+} Passenger;
+
+
 extern long (*STUB_start_elevator)(void);
-long start_elevator() {
+long start_elevator(void) {
   printk(KERN_NOTICE "Elevator started!\n");
   return 0;
 }
@@ -35,11 +45,18 @@ long start_elevator() {
 extern long(*STUB_issue_request)(int, int, int);
 long issue_request(int start_floor, int destination_floor, int type) {
   printk(KERN_NOTICE "Request issued!\n");
+  Passenger* pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
+  pass->start_floor = start_floor;
+  pass->destination_floor = destination_floor;
+  pass->type = type;
+
+  list_add_tail(&pass->floor, &floors[start_floor]);
+  printk(KERN_NOTICE "Passenger added: start=%d, dest=%d, type=%d\n", start_floor, destination_floor, type);
   return 0;
 }
 
 extern long (*STUB_stop_elevator)(void);
-long stop_elevator() {
+long stop_elevator(void) {
   printk(KERN_NOTICE "Elevator stopped!\n");
   return 0;
 }
@@ -48,14 +65,32 @@ static int elevator_init(void) {
   STUB_start_elevator = start_elevator;
   STUB_issue_request = issue_request;
   STUB_stop_elevator = stop_elevator;
+
+  int i;
+  for (i = 0; i < num_floors; i++){
+    INIT_LIST_HEAD(&floors[i]);
+  }
+
   return 0;
 }
 
-static int elevator_init(void) {
+static void elevator_exit(void) {
   STUB_start_elevator = NULL;
   STUB_issue_request = NULL;
   STUB_stop_elevator = NULL;
-  return 0;
+
+  struct list_head *pos, *q;
+  Passenger* pass;
+
+  int i;
+  for (i = 0; i < num_floors; i++){
+    list_for_each_safe(pos, q, &floors[i]) {
+      pass = list_entry(pos, Passenger, floor);
+      printk(KERN_NOTICE "Deleting Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+      list_del(pos);
+      kfree(pass);
+    }
+  }
 }
 
 module_init(elevator_init);
