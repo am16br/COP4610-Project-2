@@ -138,7 +138,7 @@ char *printfloors(void){
      }
      mutex_unlock(&passenger_mutex);
      */
-     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, count);
+     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, passengers_waiting);
      strcat(str,buf);
       //print users at waiting at each floor!!!!
    }
@@ -169,6 +169,8 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
    }else{
      stat="Not infected";
    }
+   //sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced);
+
    sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s\n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
    read_p = !read_p;
    if(read_p){
