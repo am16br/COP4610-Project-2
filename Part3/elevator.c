@@ -11,10 +11,11 @@
 #include <linux/sched.h>
 #include <linux/mutex.h>
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Elevator simulator for scheduling algorithm");
 
 #define MODULE_NAME "elevator"
+#define PERMS 0644
 #define PARENT NULL
 //elevator's movement states
 #define OFFLINE 0
@@ -107,7 +108,7 @@ char *getState(int current_state){
 char *printfloors(void){
    int i;
    char *str;
-   str = "\n\n";
+   strcat(str, "\n\n");
    for(ind = 10; ind > 0; ind--){
      strcat(str, "[");
      if(current_floor == ind){
@@ -134,6 +135,7 @@ char *printfloors(void){
 
    }
    strcat(str, "( '|' for human, 'X' for zombie )\n");
+   sprintf(str, "%s",str);
    return str;
 }
 
@@ -142,7 +144,7 @@ char *printfloors(void){
 int proc_open(struct inode *sp_inode, struct file *sp_file){
    read_p = 1;
    printk(KERN_NOTICE "proc_open\n");
-   message = kmalloc(sizeof(char) * 1024, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
+   message = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
    if(message == NULL){
      printk(KERN_WARNING "Error: proc_open");
      return -ENOMEM;
@@ -151,22 +153,24 @@ int proc_open(struct inode *sp_inode, struct file *sp_file){
 }
 
 ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *offset){
-   int len = strlen(message);
+   printk(KERN_NOTICE "proc_read\n");
    char *stat;
    if(status == 1){
      stat="Infected";
    }else{
      stat="Not infected";
    }
-   sprintf(message, "Elevator state: %s \nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s",
-getState(current_state), stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
-
+   sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced);
+   //sprintf(message, "Elevator state: %s \nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s",getState(current_state), stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
+   //printk(KERN_NOTICE "Elevator state: %s \nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s",getState(current_state), stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
    read_p = !read_p;
    if(read_p){
      return 0;
    }
-   printk(KERN_NOTICE "proc_read\n");
+   int len = strlen(message);
+   printk(KERN_NOTICE "proc_precopy\n");
    copy_to_user(buff, message, len);
+   printk(KERN_NOTICE "proc_copied\n");
    return len;
 }
 
@@ -179,9 +183,9 @@ int proc_release(struct inode *sp_inode, struct file *sp_file){
 
 
 static int elevator_init(void) {
-  STUB_start_elevator = start_elevator;
-  STUB_issue_request = issue_request;
-  STUB_stop_elevator = stop_elevator;
+  STUB_start_elevator = &(start_elevator);
+  STUB_issue_request = &(issue_request);
+  STUB_stop_elevator = &(stop_elevator);
 
   fops.open = proc_open;
   fops.read = proc_read;
@@ -195,25 +199,20 @@ static int elevator_init(void) {
   passengers_waiting = 0;
   passengers_serviced = 0;
 
-  if(!proc_create(MODULE_NAME, 0644, NULL, &fops)){
-       printk(KERN_WARNING "Error: proc_create \n");
-       remove_proc_entry(MODULE_NAME, NULL);
-       return -ENOMEM;
-  }
-
   int i;
   for (i = 0; i < num_floors; i++){
     INIT_LIST_HEAD(&floors[i]);
   }
   mutex_init(&passenger_mutex);
+  if(!proc_create(MODULE_NAME, PERMS, NULL, &fops)){
+       printk(KERN_WARNING "Error: proc_create \n");
+       remove_proc_entry(MODULE_NAME, NULL);
+       return -ENOMEM;
+  }
   return 0;
 }
 
 static void elevator_exit(void) {
-  STUB_start_elevator = NULL;
-  STUB_issue_request = NULL;
-  STUB_stop_elevator = NULL;
-
   struct list_head *pos, *q;
   Passenger* pass;
 
@@ -228,116 +227,10 @@ static void elevator_exit(void) {
   }
   mutex_destroy(&passenger_mutex);
   remove_proc_entry(MODULE_NAME, NULL);
+  STUB_start_elevator = NULL;
+  STUB_issue_request = NULL;
+  STUB_stop_elevator = NULL;
 }
 
 module_init(elevator_init);
 module_exit(elevator_exit);
-/*
-int current_state, next_state;   //in case of loading or offline
-int status;
-int current_floor, current_load;
-int passengers_waiting, passengers_serviced;
-//int passengers_waiting[10];
-//list of 10 lists of waiting passengers, (1 or 0.. infected/not), desired floor?
-int ind;
-static char *message;
-static int read_p;
-struct task_struct* elevator_thread;
-static struct file_operations fops;
-//struct mutex elevatorPassengers;
-//struct mutex passengersList;
-/*
-
-int elevator_run(void *data){
-  while(!kthread_should_stop()){
-  //run module with rules:
-    switch (current_state){
-      case OFFLINE:
-        break;
-      case IDLE:
-        //IDLE: check for load, set current_state, set next_state to up
-        break;
-      case LOADING:
-        ssleep(1);
-        //function to unload passengers from elevator passengers when destination==current_floor
-        //function to load elevatorPassengers from next in passengersList at current_floor
-          //check space available, elevator status (no humans if infected), right direction..
-        mutex_lock_interruptible(&elevatorPassengers);
-        //add to elevator
-        mutex_unlock(&elevatorPassengers);
-        mutex_lock_interruptible(&passengersList);
-        //add to list
-        mutex_unlock(&passengersList);
-        break;
-      case UP:
-        if(current_floor == 10){
-          current_state = DOWN;
-          next_state = DOWN;
-          ssleep(2);
-          current_floor = current_floor - 1;
-        }else{
-          ssleep(2);
-          current_floor = current_floor + 1;
-        }
-        //load/unload check?
-        break;
-      case DOWN:
-        if(current_floor == 1){
-          current_state = UP;
-          next_state = UP;
-          ssleep(2);
-          current_floor = current_floor + 1;
-        }else{
-          ssleep(2);
-          current_floor = current_floor - 1;
-        }
-        ssleep(2);
-        //load/unload/idle check?
-        break;
-    }
-  }
-  return 0;
-}
-
-
-// /*******************************************************************/
-
-// static int elevator_init(void) {
-//   printk(KERN_NOTICE "Creating /proc/%s.\n", MODULE_NAME);
-
-//   fops.open = proc_open;
-//   fops.read = proc_read;
-//   fops.release = proc_release;
-
-//   status = 0;     //for not infected
-//   current_state = OFFLINE;  //initialize states
-//   next_state = UP;
-//   current_floor = 1;
-//   current_load = 0;
-//   passengers_waiting = 0;
-//   passengers_serviced = 0;
-
-//   if(!proc_create(MODULE_NAME, 0644, NULL, &fops)){
-//     printk(KERN_WARNING "Error: proc_create \n");
-//     remove_proc_entry(MODULE_NAME, NULL);
-//     return -ENOMEM;
-//   }
-
-//   elevator_thread = kthread_run(elevator_run, NULL, "Elevator Thread");
-//   if(IS_ERR(elevator_thread)){
-//     printk(KERN_WARNING "Error: ElevatorRun\n");
-//     return PTR_ERR(elevator_thread);
-//   }
-//   return 0;
-// }
-
-// static void elevator_exit(void) {
-//     mutex_destroy(&elevatorPassengers);
-//     mutex_destroy(&passengersList);
-//     kthread_stop(elevator_thread);
-//     remove_proc_entry(MODULE_NAME, NULL);
-//     printk(KERN_NOTICE "Removing /proc/%s.\n", MODULE_NAME);
-// }
-
-// module_init(elevator_init);
-// module_exit(elevator_exit);
