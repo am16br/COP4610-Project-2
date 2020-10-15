@@ -77,6 +77,158 @@ long stop_elevator(void) {
   return 0;
 }
 
+/**********************************************************/
+//run thread
+/*
+int load_check(void){
+  Passenger* pass;
+  struct list_head *pos, *q;
+
+  if(current_load != 10){
+    mutex_lock_interruptible(&waiting_mutex);
+    list_for_each_safe(pos, q, &floors[current_floor]) {
+      pass = list_entry(pos, Passenger, floor);
+      if(pass->type == 0){
+        if(status == 1){
+          return 0;
+        }
+      }
+      mutex_unlock(&waiting_mutex);
+      return 1;
+      if(pass->destination_floor == current_floor){
+        mutex_unlock(&passenger_mutex);
+        return 1;
+      }
+    }
+    mutex_unlock(&waiting_mutex);
+  }
+  return 0;
+}
+
+int unload_check(void){
+  Passenger* pass;
+  struct list_head *pos, *q;
+  mutex_lock_interruptible(&passenger_mutex);
+  list_for_each_safe(pos, q, &floors) {
+    pass = list_entry(pos, Passenger, floor);
+    if(pass->destination_floor == current_floor){
+      mutex_unlock(&passenger_mutex);
+      return 1;
+    }
+    kfree(pass);
+  }
+  mutex_unlock(&passenger_mutex);
+  return 0;
+}
+
+void load(int floor){
+  Passenger* wpass;
+  struct list_head *pos, *q;
+  mutex_unlock(&waiting_mutex);
+  list_for_each_safe(pos, q, &floors[floor-1]) {
+    wpass = list_entry(pos, Passenger, floor);
+    Passenger* pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
+    pass->start_floor = wpass->start_floor;
+    pass->destination_floor = wpass->destination_floor;
+    pass->type = wpass->type;
+    if(pass->type == 1){
+      status == 1;
+    }
+    mutex_lock_interruptible(&passenger_mutex);
+    list_add_tail(&pass, &floors);
+    list_del(pos);
+    kfree(wpass);
+    mutex_unlock(&passenger_mutex);
+    mutex_unlock(&waiting_mutex);
+    return;
+  }
+  mutex_unlock(&waiting_mutex);
+}
+
+void unload(void){
+  Passenger* pass;
+  struct list_head *pos, *q;
+  mutex_lock_interruptible(&passenger_mutex);
+  list_for_each_safe(pos, q, &floors) {
+    pass = list_entry(pos, Passenger, floor);
+    if(pass->destination_floor == current_floor){
+      passengers_serviced++;
+      list_del(pos);
+      kfree(pass);
+    }
+  }
+  mutex_unlock(&passenger_mutex);
+  if(current_load == 0){
+    status = 0;
+  }
+  return;
+}
+
+int elevator_run(void *data){
+  while(!kthread_should_stop()){
+    switch (current_state){
+      case OFFLINE:
+        break;
+      case IDLE:
+        //IDLE: check for load, set current_state, set next_state to up
+        if(load_check() == 1){
+          current_state = LOADING;
+        }
+        else{
+          current_state = UP;
+        }
+        next_state = UP;
+        break;
+      case LOADING:
+        ssleep(1);
+        unload();
+        if(load_check() == 1){
+          load(current_floor);
+        }
+        current_state = next_state;
+        if(current_state == UP){
+          if(current_floor == 10){
+            current_state = DOWN;
+            next_state = DOWN;
+          }
+        }
+        else if(current_state == DOWN){
+          if(current_floor == 1){
+            current_state = UP;
+            next_state = UP;
+          }
+        }
+        break;
+      case UP:
+        if(current_floor == 10){
+          current_state = DOWN;
+          next_state = DOWN;
+        }else{
+          ssleep(2);
+          current_floor = current_floor + 1;
+          if(load_check() == 1 || unload_check() == 1){
+            current_state = LOADING;
+          }
+        }
+        break;
+      case DOWN:
+        if(current_floor == 1){
+          current_state = UP;
+          next_state = UP;
+        }else{
+          ssleep(2);
+          current_floor = current_floor - 1;
+          if(load_check() == 1 || unload_check() == 1){
+            current_state = LOADING;
+          }
+        }
+        //idle check?
+        break;
+    }
+  }
+  return 0;
+}
+*/
 
 /**********************************************************/
 //display functions
