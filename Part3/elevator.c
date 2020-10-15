@@ -79,8 +79,9 @@ long stop_elevator(void) {
 
 
 /**********************************************************/
-
+//display functions
 char *getState(int current_state){
+  //convert state to printable string
    static char str[10];
    switch (current_state){
      case OFFLINE:
@@ -106,40 +107,48 @@ char *getState(int current_state){
 }
 
 char *printfloors(void){
-   int i;
-   char *str;
-   strcat(str, "\n\n");
-   for(ind = 10; ind > 0; ind--){
-     strcat(str, "[");
+  //print all floors
+   //struct list_head *pos, *q;
+   //Passenger* pass;
+   int count;   //passengers waiting at floor
+   char *isFloor;//, *waitlist;
+   char *str = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
+   char *buf = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
+   char *ret = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
+   for(ind = 10; ind > 0; ind--){ //loop floors
+     count = 0;
+     //waitlist = NULL;
      if(current_floor == ind){
-       strcat(str, "*");
+       isFloor="*";
      }else{
-       strcat(str, " ");
+       isFloor=" ";
      }
-     strcat(str, "] Floor ");
-     strcat(str, ind);
-     strcat(str, ":\t");
-     strcat(str, passengers_waiting); //count of waiting at each floor
-     //how are waiting passengers stored? list of lists
      /*
-     for(i = 0; i < passengers_waiting; i++){
-       if(passengers_waiting[i] == 0){
-         strcat(str, "X");
+     mutex_lock_interruptible(&passenger_mutex);
+     list_for_each_safe(pos, q, &floors[ind]) {
+       count = count + 1;
+       pass = list_entry(pos, Passenger, floor);
+       if(pass->type == 0){
+         strcat(waitlist, "|");
        }
        else{
-         strcat(str, "|");
+         strcat(waitlist, "X");
        }
+       kfree(pass);
      }
+     mutex_unlock(&passenger_mutex);
      */
-     strcat(str, "\n\n");
-
+     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, count);
+     strcat(str,buf);
+      //print users at waiting at each floor!!!!
    }
-   strcat(str, "( '|' for human, 'X' for zombie )\n");
-   sprintf(str, "%s",str);
-   return str;
+   sprintf(ret, "%s\n\n( '|' for human, 'X' for zombie )\n", str);
+   return ret;
 }
 
 /*******************************************************************/
+
+//proc file functions
 
 int proc_open(struct inode *sp_inode, struct file *sp_file){
    read_p = 1;
@@ -155,23 +164,18 @@ int proc_open(struct inode *sp_inode, struct file *sp_file){
 ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *offset){
    printk(KERN_NOTICE "proc_read\n");
    char *stat;
-   if(status == 1){
+   if(status == 1){     //convert int status to printable string
      stat="Infected";
    }else{
      stat="Not infected";
    }
-   sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced);
-   //sprintf(message, "Elevator state: %s \nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s",getState(current_state), stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
-   //printk(KERN_NOTICE "Elevator state: %s \nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s",getState(current_state), stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
+   sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s\n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
    read_p = !read_p;
    if(read_p){
      return 0;
    }
-   int len = strlen(message);
-   printk(KERN_NOTICE "proc_precopy\n");
-   copy_to_user(buff, message, len);
-   printk(KERN_NOTICE "proc_copied\n");
-   return len;
+   copy_to_user(buff, message, strlen(message));  //copy message
+   return strlen(message);
 }
 
 int proc_release(struct inode *sp_inode, struct file *sp_file){
@@ -199,9 +203,8 @@ static int elevator_init(void) {
   passengers_waiting = 0;
   passengers_serviced = 0;
 
-  int i;
-  for (i = 0; i < num_floors; i++){
-    INIT_LIST_HEAD(&floors[i]);
+  for (ind = 0; ind < num_floors; ind++){
+    INIT_LIST_HEAD(&floors[ind]);
   }
   mutex_init(&passenger_mutex);
   if(!proc_create(MODULE_NAME, PERMS, NULL, &fops)){
@@ -216,9 +219,8 @@ static void elevator_exit(void) {
   struct list_head *pos, *q;
   Passenger* pass;
 
-  int i;
-  for (i = 0; i < num_floors; i++){
-    list_for_each_safe(pos, q, &floors[i]) {
+  for (ind = 0; ind < num_floors; ind++){
+    list_for_each_safe(pos, q, &floors[ind]) {
       pass = list_entry(pos, Passenger, floor);
       printk(KERN_NOTICE "Deleting Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
       list_del(pos);
