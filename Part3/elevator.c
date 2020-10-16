@@ -57,14 +57,14 @@ long start_elevator(void) {
 extern long(*STUB_issue_request)(int, int, int);
 long issue_request(int start_floor, int destination_floor, int type) {
   printk(KERN_NOTICE "Request issued!\n");
-  Passenger* pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
+  Passenger *pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
   pass->start_floor = start_floor;
   pass->destination_floor = destination_floor;
   pass->type = type;
 
-  mutex_lock(&passenger_mutex);
+  mutex_lock_interruptible(&passenger_mutex);
 
-  list_add_tail(&pass->floor, &floors[start_floor]);
+  list_add_tail(&pass->floor, &floors[start_floor-1]);
 
   mutex_unlock(&passenger_mutex);
   printk(KERN_NOTICE "Passenger added: start=%d, dest=%d, type=%d\n", start_floor, destination_floor, type);
@@ -262,19 +262,20 @@ char *printfloors(void){
   //print all floors
    //struct list_head *pos, *q;
    //Passenger* pass;
-   int count;   //passengers waiting at floor
+   int count;
    char *isFloor;//, *waitlist;
    char *str = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
    char *buf = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
    char *ret = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
    for(ind = 10; ind > 0; ind--){ //loop floors
-     count = 0;
+     count=0;   //passengers waiting at floor
      //waitlist = NULL;
      if(current_floor == ind){
        isFloor="*";
      }else{
        isFloor=" ";
      }
+     count = count + 1;
      /*
      mutex_lock_interruptible(&passenger_mutex);
      list_for_each_safe(pos, q, &floors[ind]) {
@@ -290,7 +291,7 @@ char *printfloors(void){
      }
      mutex_unlock(&passenger_mutex);
      */
-     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, passengers_waiting);
+     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, count);
      strcat(str,buf);
       //print users at waiting at each floor!!!!
    }
