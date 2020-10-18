@@ -230,79 +230,8 @@ int elevator_run(void *data){
 }
 */
 
-/**********************************************************/
-//display functions
-char *getState(int current_state){
-  //convert state to printable string
-   static char str[10];
-   switch (current_state){
-     case OFFLINE:
-       sprintf(str, "OFFLINE");
-       break;
-     case IDLE:
-       sprintf(str, "IDLE");
-       break;
-     case LOADING:
-       sprintf(str, "LOADING");
-       break;
-     case UP:
-       sprintf(str, "UP");
-       break;
-     case DOWN:
-       sprintf(str, "DOWN");
-       break;
-     default:
-       sprintf(str, "ERROR");
-       break;
-   }
-   return str;
-}
-
-char *printfloors(void){
-  //print all floors
-   //struct list_head *pos, *q;
-   //Passenger* pass;
-   int count;
-   char *isFloor;//, *waitlist;
-   char *str = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
-   char *buf = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
-   char *ret = kmalloc(sizeof(char) * 2048, __GFP_RECLAIM | __GFP_IO | __GFP_FS);
-   for(ind = 10; ind > 0; ind--){ //loop floors
-     count=0;   //passengers waiting at floor
-     //waitlist = NULL;
-     if(current_floor == ind){
-       isFloor="*";
-     }else{
-       isFloor=" ";
-     }
-     count = count + 1;
-     /*
-     mutex_lock_interruptible(&passenger_mutex);
-     list_for_each_safe(pos, q, &floors[ind]) {
-       count = count + 1;
-       pass = list_entry(pos, Passenger, floor);
-       if(pass->type == 0){
-         strcat(waitlist, "|");
-       }
-       else{
-         strcat(waitlist, "X");
-       }
-       kfree(pass);
-     }
-     mutex_unlock(&passenger_mutex);
-     */
-     sprintf(buf, "[%s] Floor %d:\t%d\n", isFloor, ind, count);
-     strcat(str,buf);
-      //print users at waiting at each floor!!!!
-   }
-   sprintf(ret, "%s\n\n( '|' for human, 'X' for zombie )\n", str);
-   return ret;
-}
-
 /*******************************************************************/
-
 //proc file functions
-
 int proc_open(struct inode *sp_inode, struct file *sp_file){
    read_p = 1;
    printk(KERN_NOTICE "proc_open\n");
@@ -316,15 +245,88 @@ int proc_open(struct inode *sp_inode, struct file *sp_file){
 
 ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *offset){
    printk(KERN_NOTICE "proc_read\n");
-   char *stat;
-   if(status == 1){     //convert int status to printable string
-     stat="Infected";
-   }else{
-     stat="Not infected";
+   Passenger* pass;           //for checking waiting passengers
+   struct list_head *pos, *q;
+   char *sub = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
+   int count;
+   char *isFloor, *waitlist;
+   sprintf(message, "Eleavtor state: ");
+   switch (current_state){    //convert state to string
+     case OFFLINE:
+       sprintf(sub, "OFFLINE\n");
+       break;
+     case IDLE:
+       sprintf(sub, "IDLE\n");
+       break;
+     case LOADING:
+       sprintf(sub, "LOADING\n");
+       break;
+     case UP:
+       sprintf(sub, "UP\n");
+       break;
+     case DOWN:
+       sprintf(sub, "DOWN\n");
+       break;
+     default:
+       sprintf(sub, "ERROR\n");
+       break;
+     }
+   strcat(message, sub);
+   if(status == 1){     //status to string
+     sprintf(sub, "Eleavtor status: %s\n", current_state);
    }
-   //sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced);
+   else{
+     sprintf(sub, "Eleavtor status: Not infected\n");
+   }
+   strcat(message, sub);
+   sprintf(sub, "Current Floor: %d\nNumber of passengers: %d\n", current_floor,current_load);
+   strcat(message, sub);
+   sprintf(sub, "Number of passengers waiting: %d\nNumber of Passengers seriviced: %d\n", passengers_waiting,passengers_serviced);
+   strcat(message, sub);
 
-   sprintf(message, "Elevator state: %s\nElevator status: %s \nCurrent floor: %d \nNumber of passengers: %d \nNumber of passengers waiting: %d\nNumber passengers serviced: %d \n%s\n", getState(current_state),stat, current_floor,  current_load, passengers_waiting, passengers_serviced, printfloors());
+   for(ind = 10; ind > 0; ind--){ //loop floors
+     count=0;   //passengers waiting at floor
+     waitlist = "";
+     if(current_floor == ind){
+       //strcpy(isFloor, "*");
+       isFloor = "*";
+     }else{
+       //strcpy(isFloor, " ");
+       isFloor = " ";
+     }
+     /* ERROR NOT PROPERLY HANDLING PAGING Request
+     //need to check if pasengers waiting at floor?
+     mutex_lock_interruptible(&passenger_mutex);
+     list_for_each_safe(pos, q, &floors[ind]) {
+       //printk(KERN_NOTICE "WAITING ???%d\n", count);
+       pass = list_entry(pos, Passenger, floor);
+       printk(KERN_NOTICE "TYPE ??? %d\n", pass->type);  //improper value?
+       if(pass->type == 0){
+         //mutex_unlock(&passenger_mutex);
+         //waitlist = "| ";
+         strcat(waitlist, "| ");
+       }
+       else{
+         //mutex_unlock(&passenger_mutex);
+         //waitlist = "X ";
+         strcat(waitlist, "X ");
+       }
+       printk(KERN_NOTICE "1WAITING ???%d\n", count);
+       count = count + 1;
+       printk(KERN_NOTICE "2WAITING ???%d\n", count); //code reaches here
+       //kfree(pass);
+       printk(KERN_NOTICE "FREE ???%d\n", count);
+     }
+     mutex_unlock(&passenger_mutex);
+     //unable to handle kernel NULL pointer dereference at 0000000000000000
+     */
+     sprintf(sub, "[%s] Floor %d:\t%d\t%s\n", isFloor, ind, count, waitlist);
+     strcat(message,sub);
+      //print users at waiting at each floor!!!!
+   }
+   sprintf(sub, "\n\n( '|' for human, 'X' for zombie )\n");
+   strcat(message,sub);
+
    read_p = !read_p;
    if(read_p){
      return 0;
