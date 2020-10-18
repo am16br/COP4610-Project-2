@@ -249,7 +249,9 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
    struct list_head *pos, *q;
    char *sub = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
    int count;
-   char *isFloor, *waitlist;
+   char *isFloor;
+   char *waitlist = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
+
    sprintf(message, "Eleavtor state: ");
    switch (current_state){    //convert state to string
      case OFFLINE:
@@ -286,43 +288,29 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
 
    for(ind = 10; ind > 0; ind--){ //loop floors
      count=0;   //passengers waiting at floor
-     waitlist = "";
+     strcpy(waitlist, "");
      if(current_floor == ind){
-       //strcpy(isFloor, "*");
        isFloor = "*";
      }else{
-       //strcpy(isFloor, " ");
        isFloor = " ";
      }
-     /* ERROR NOT PROPERLY HANDLING PAGING Request
-     //need to check if pasengers waiting at floor?
+
      mutex_lock_interruptible(&passenger_mutex);
-     list_for_each_safe(pos, q, &floors[ind]) {
-       //printk(KERN_NOTICE "WAITING ???%d\n", count);
+     list_for_each_safe(pos, q, &floors[ind-1]) {
        pass = list_entry(pos, Passenger, floor);
-       printk(KERN_NOTICE "TYPE ??? %d\n", pass->type);  //improper value?
        if(pass->type == 0){
-         //mutex_unlock(&passenger_mutex);
-         //waitlist = "| ";
          strcat(waitlist, "| ");
        }
        else{
-         //mutex_unlock(&passenger_mutex);
-         //waitlist = "X ";
+          printk(KERN_NOTICE "Zombie\n");  //improper value?
          strcat(waitlist, "X ");
        }
-       printk(KERN_NOTICE "1WAITING ???%d\n", count);
        count = count + 1;
-       printk(KERN_NOTICE "2WAITING ???%d\n", count); //code reaches here
-       //kfree(pass);
-       printk(KERN_NOTICE "FREE ???%d\n", count);
      }
      mutex_unlock(&passenger_mutex);
-     //unable to handle kernel NULL pointer dereference at 0000000000000000
-     */
+
      sprintf(sub, "[%s] Floor %d:\t%d\t%s\n", isFloor, ind, count, waitlist);
      strcat(message,sub);
-      //print users at waiting at each floor!!!!
    }
    sprintf(sub, "\n\n( '|' for human, 'X' for zombie )\n");
    strcat(message,sub);
