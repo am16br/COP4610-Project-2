@@ -37,6 +37,7 @@ static int read_p;
 static struct file_operations fops;
 
 struct mutex passenger_mutex;
+struct mutex elevator_mutex;
 
 struct list_head floors[num_floors];
 struct list_head elevator_passengers;
@@ -114,14 +115,67 @@ long stop_elevator(void) {
 
 int load_check(void){
   Passenger* pass;
+  Passenger* pass1;
   struct list_head *pos, *q;
   int passengers_added = 0;
+  int local_direction, global_direction;
   if(current_load != 10){
     mutex_lock_interruptible(&passenger_mutex);
     list_for_each_safe(pos, q, &floors[current_floor]) {
       pass = list_entry(pos, Passenger, floor);
       if(current_load < 10) {// add passengers to the elevator whose destination floor aligns with the direction of travel
-        if (pass->type == 0) { // HUMAN PASSENGERS
+        if(elevator_status == 1){ //if elevator infected
+          if (pass->type == 0) {  //ensure next passenger is not human
+            return passengers_added;
+          }
+        }
+        if(direction == UP){
+          global_direction = 0;
+        }
+        else{
+          global_direction = 1;
+        }
+        if(pass->start_floor < pass->destination_floor){
+          local_direction = 0;
+        }
+        else{
+          local_direction = 1;
+        }
+        if(local_direction == global_direction){
+          if(direction == UP){
+            if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is higher, set new destination floor
+              elevator_destination_floor = pass->destination_floor;
+          }
+          else{
+            if(pass->destination_floor < elevator_destination_floor) //if the passenger destination floor is lower, set new destination floor
+              elevator_destination_floor = pass->destination_floor;
+          }
+          if (current_floor == elevator_destination_floor) {
+            elevator_destination_floor = pass->destination_floor;
+          }
+          elevator_destination_floor = pass->destination_floor;
+          pass1 = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
+          pass1->start_floor = pass->start_floor;
+          pass1->destination_floor = pass->destination_floor;
+          pass1->type = pass->type;
+          
+          list_add_tail(&pass1->floor, &elevator_passengers);
+          passengers_added++;
+          current_load++;
+          passengers_waiting--;
+          printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+          printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+          list_del(pos);
+          //kfree(pass);
+        }
+      }
+    }
+    mutex_unlock(&passenger_mutex);
+  }
+  return passengers_added;
+}
+          /*
+        if (pass->type == 0) { // HUMAN PASSENGERS  
           if (elevator_status == 1) {
             // elevator is infected, do nothing
           } else {
@@ -205,68 +259,29 @@ int load_check(void){
     mutex_unlock(&passenger_mutex);
   }
   return passengers_added;
+  
 }
-/*
-
-int unload_check(void){
-  Passenger* pass;
-  struct list_head *pos, *q;
-  mutex_lock_interruptible(&passenger_mutex);
-  list_for_each_safe(pos, q, &floors) {
-    pass = list_entry(pos, Passenger, floor);
-    if(pass->destination_floor == current_floor){
-      mutex_unlock(&passenger_mutex);
-      return 1;
-    }
-    kfree(pass);
-  }
-  mutex_unlock(&passenger_mutex);
-  return 0;
-}
-
-void load(int floor){
-  Passenger* wpass;
-  struct list_head *pos, *q;
-  mutex_unlock(&waiting_mutex);
-  list_for_each_safe(pos, q, &floors[floor-1]) {
-    wpass = list_entry(pos, Passenger, floor);
-    Passenger* pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
-    pass->start_floor = wpass->start_floor;
-    pass->destination_floor = wpass->destination_floor;
-    pass->type = wpass->type;
-    if(pass->type == 1){
-      elevator_status == 1;
-    }
-    mutex_lock_interruptible(&passenger_mutex);
-    list_add_tail(&pass, &floors);
-    list_del(pos);
-    kfree(wpass);
-    mutex_unlock(&passenger_mutex);
-    mutex_unlock(&waiting_mutex);
-    return;
-  }
-  mutex_unlock(&waiting_mutex);
-}
-
+*/
 void unload(void){
   Passenger* pass;
   struct list_head *pos, *q;
-  mutex_lock_interruptible(&passenger_mutex);
-  list_for_each_safe(pos, q, &floors) {
-    pass = list_entry(pos, Passenger, floor);
-    if(pass->destination_floor == current_floor){
-      passengers_serviced++;
-      list_del(pos);
-      kfree(pass);
+  if(current_load != 0){
+    mutex_lock_interruptible(&elevator_mutex);
+    list_for_each_safe(pos, q, &floors[current_floor]) {
+      pass = list_entry(pos, Passenger, floor);
+      if(pass->destination_floor == current_floor){
+        list_del(pos);
+        kfree(pass);
+        current_load--;
+        passengers_serviced++;
+        printk(KERN_NOTICE "Passenger removed to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+      }
     }
+  }else{
+    elevator_status = 0;  //changing to not infected when empty
   }
-  mutex_unlock(&passenger_mutex);
-  if(current_load == 0){
-    elevator_status = 0;
-  }
-  return;
+  
 }
-*/
 
 int elevator_run(void *data){
   printk(KERN_NOTICE "Inside elevator_run");
@@ -276,7 +291,7 @@ int elevator_run(void *data){
       current_state = LOADING;
       printk(KERN_NOTICE "Loaded %d passengers on floor %d \n", load_check(), current_floor);
       ssleep(1);
-      //unload();
+      unload();
 
 
       if (current_floor == elevator_destination_floor){
@@ -397,14 +412,9 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
    Passenger* pass;     //for checking waiting passengers
    struct list_head *pos, *q;
    char *sub = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
+   char *waitlist = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
    int count;
    char *isFloor;
-   char *waitlist = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
-
-<<<<<<< HEAD
-   printk(KERN_NOTICE "AFTER INITIALIZATION\n");
-=======
->>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
    sprintf(message, "Eleavtor state: ");
    switch (current_state){    //convert state to string
      case OFFLINE:
@@ -433,14 +443,12 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
    else{
      sprintf(sub, "Eleavtor status: Not infected\n");
    }
-  printk(KERN_NOTICE "AFTER STATUS\n");
    strcat(message, sub);
    sprintf(sub, "Current Floor: %d\nNumber of passengers: %d\n", current_floor, current_load);
    strcat(message, sub);
    sprintf(sub, "Number of passengers waiting: %d\nNumber of Passengers seriviced: %d\n", passengers_waiting, passengers_serviced);
    strcat(message, sub);
 
-   printk(KERN_NOTICE "BEFORE LOOP FLOORS\n");
    for(ind = 10; ind > 0; ind--){ //loop floors
      count=0;   //passengers waiting at floor
      strcpy(waitlist, "");
@@ -449,11 +457,6 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
      }else{
        isFloor = " ";
      }
-<<<<<<< HEAD
-       printk(KERN_NOTICE "BEFORE MUTEX\n");
-=======
-
->>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
      mutex_lock_interruptible(&passenger_mutex);
      list_for_each_safe(pos, q, &floors[ind-1]) {
        pass = list_entry(pos, Passenger, floor);
@@ -461,21 +464,15 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
          strcat(waitlist, "| ");
        }
        else{
-          printk(KERN_NOTICE "Zombie\n");  //improper value?
+         printk(KERN_NOTICE "Zombie\n");  //improper value?
          strcat(waitlist, "X ");
        }
        count = count + 1;
      }
      mutex_unlock(&passenger_mutex);
-<<<<<<< HEAD
-      
-=======
-
->>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
      sprintf(sub, "[%s] Floor %d:\t%d\t%s\n", isFloor, ind, count, waitlist);
      strcat(message,sub);
    }
-    printk(KERN_NOTICE "AFTER LOOP FLOORS\n");
    sprintf(sub, "\n\n( '|' for human, 'X' for zombie )\n");
    strcat(message,sub);
 
@@ -517,6 +514,7 @@ static int elevator_init(void) {
   }
   INIT_LIST_HEAD(&elevator_passengers);
   mutex_init(&passenger_mutex);
+  mutex_init(&elevator_mutex);
   if(!proc_create(MODULE_NAME, PERMS, NULL, &fops)){
        printk(KERN_WARNING "Error: proc_create \n");
        remove_proc_entry(MODULE_NAME, NULL);
@@ -541,6 +539,7 @@ static void elevator_exit(void) {
     stop_elevator();
 
   mutex_destroy(&passenger_mutex);
+  mutex_destroy(&elevator_mutex);
   remove_proc_entry(MODULE_NAME, NULL);
   STUB_start_elevator = NULL;
   STUB_issue_request = NULL;
