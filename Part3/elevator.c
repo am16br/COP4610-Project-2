@@ -126,7 +126,16 @@ int load_check(void){
             // elevator is infected, do nothing
           } else {
             // if elevator is safe, check the floors
-            if(direction == UP && pass->destination_floor > current_floor){
+            if (current_floor == elevator_destination_floor) {
+              elevator_destination_floor = pass->destination_floor;
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+            } else if(direction == UP && pass->destination_floor > current_floor){
               //if elevator is going up and so is the passenger, add to elevator
               if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is higher, set new destination floor
                 elevator_destination_floor = pass->destination_floor;
@@ -154,7 +163,16 @@ int load_check(void){
           }
         } else { //INFECTED PASSENGERS
           // if passenger is infected, check the destination floors.
-          if(direction == UP && pass->destination_floor > current_floor){
+          if (current_floor == elevator_destination_floor) {
+              elevator_destination_floor = pass->destination_floor;
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+          } else if(direction == UP && pass->destination_floor > current_floor){
               //if elevator is going up and so is the passenger, add to elevator
               if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is higher, set new destination floor
                 elevator_destination_floor = pass->destination_floor;
@@ -182,8 +200,7 @@ int load_check(void){
               list_del(pos);
             }
         }
-      }
-      
+      } 
     }
     mutex_unlock(&passenger_mutex);
   }
@@ -377,11 +394,14 @@ int proc_open(struct inode *sp_inode, struct file *sp_file){
 
 ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *offset){
    printk(KERN_NOTICE "proc_read\n");
-   Passenger* pass;           //for checking waiting passengers
+   Passenger* pass;     //for checking waiting passengers
    struct list_head *pos, *q;
    char *sub = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
    int count;
-   char *isFloor, *waitlist;
+   char *isFloor;
+   char *waitlist = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
+
+   printk(KERN_NOTICE "AFTER INITIALIZATION\n");
    sprintf(message, "Eleavtor state: ");
    switch (current_state){    //convert state to string
      case OFFLINE:
@@ -404,58 +424,47 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
        break;
      }
    strcat(message, sub);
-   if(elevator_status == 1){     //elevator_status to string
-     sprintf(sub, "Eleavtor elevator_status: %s\n", current_state);
+   if(elevator_status == 1){     //status to string
+     sprintf(sub, "Eleavtor status: Infected\n");
    }
    else{
-     sprintf(sub, "Eleavtor elevator_status: Not infected\n");
+     sprintf(sub, "Eleavtor status: Not infected\n");
    }
+  printk(KERN_NOTICE "AFTER STATUS\n");
    strcat(message, sub);
-   sprintf(sub, "Current Floor: %d\nNumber of passengers: %d\n", current_floor,current_load);
+   sprintf(sub, "Current Floor: %d\nNumber of passengers: %d\n", current_floor, current_load);
    strcat(message, sub);
-   sprintf(sub, "Number of passengers waiting: %d\nNumber of Passengers seriviced: %d\n", passengers_waiting,passengers_serviced);
+   sprintf(sub, "Number of passengers waiting: %d\nNumber of Passengers seriviced: %d\n", passengers_waiting, passengers_serviced);
    strcat(message, sub);
 
+   printk(KERN_NOTICE "BEFORE LOOP FLOORS\n");
    for(ind = 10; ind > 0; ind--){ //loop floors
      count=0;   //passengers waiting at floor
-     waitlist = "";
+     strcpy(waitlist, "");
      if(current_floor == ind){
-       //strcpy(isFloor, "*");
        isFloor = "*";
      }else{
-       //strcpy(isFloor, " ");
        isFloor = " ";
      }
-     /* ERROR NOT PROPERLY HANDLING PAGING Request
-     //need to check if pasengers waiting at floor?
+       printk(KERN_NOTICE "BEFORE MUTEX\n");
      mutex_lock_interruptible(&passenger_mutex);
-     list_for_each_safe(pos, q, &floors[ind]) {
-       //printk(KERN_NOTICE "WAITING ???%d\n", count);
+     list_for_each_safe(pos, q, &floors[ind-1]) {
        pass = list_entry(pos, Passenger, floor);
-       printk(KERN_NOTICE "TYPE ??? %d\n", pass->type);  //improper value?
        if(pass->type == 0){
-         //mutex_unlock(&passenger_mutex);
-         //waitlist = "| ";
          strcat(waitlist, "| ");
        }
        else{
-         //mutex_unlock(&passenger_mutex);
-         //waitlist = "X ";
+          printk(KERN_NOTICE "Zombie\n");  //improper value?
          strcat(waitlist, "X ");
        }
-       printk(KERN_NOTICE "1WAITING ???%d\n", count);
        count = count + 1;
-       printk(KERN_NOTICE "2WAITING ???%d\n", count); //code reaches here
-       //kfree(pass);
-       printk(KERN_NOTICE "FREE ???%d\n", count);
      }
      mutex_unlock(&passenger_mutex);
-     //unable to handle kernel NULL pointer dereference at 0000000000000000
-     */
+      
      sprintf(sub, "[%s] Floor %d:\t%d\t%s\n", isFloor, ind, count, waitlist);
      strcat(message,sub);
-      //print users at waiting at each floor!!!!
    }
+    printk(KERN_NOTICE "AFTER LOOP FLOORS\n");
    sprintf(sub, "\n\n( '|' for human, 'X' for zombie )\n");
    strcat(message,sub);
 
