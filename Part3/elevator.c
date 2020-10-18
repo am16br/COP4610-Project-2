@@ -401,7 +401,10 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
    char *isFloor;
    char *waitlist = kmalloc(sizeof(char)*200, __GFP_RECLAIM);  //holds substring, concatenated to msg
 
+<<<<<<< HEAD
    printk(KERN_NOTICE "AFTER INITIALIZATION\n");
+=======
+>>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
    sprintf(message, "Eleavtor state: ");
    switch (current_state){    //convert state to string
      case OFFLINE:
@@ -446,7 +449,11 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
      }else{
        isFloor = " ";
      }
+<<<<<<< HEAD
        printk(KERN_NOTICE "BEFORE MUTEX\n");
+=======
+
+>>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
      mutex_lock_interruptible(&passenger_mutex);
      list_for_each_safe(pos, q, &floors[ind-1]) {
        pass = list_entry(pos, Passenger, floor);
@@ -460,7 +467,11 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
        count = count + 1;
      }
      mutex_unlock(&passenger_mutex);
+<<<<<<< HEAD
       
+=======
+
+>>>>>>> 03c1ead349bbc8687477b15f63edc64b6eee3184
      sprintf(sub, "[%s] Floor %d:\t%d\t%s\n", isFloor, ind, count, waitlist);
      strcat(message,sub);
    }
