@@ -27,8 +27,8 @@ MODULE_DESCRIPTION("Elevator simulator for scheduling algorithm");
 #define num_floors 10
 #define maxload 10
 
-int current_state, next_state;   //in case of loading or offline
-int status, passengers_waiting, passengers_serviced;
+int current_state, direction, elevator_destination_floor = -1;   //in case of loading or offline
+int elevator_status, passengers_waiting, passengers_serviced;
 int current_floor, current_load;
 int ind;
 static char *message;
@@ -39,6 +39,7 @@ static struct file_operations fops;
 struct mutex passenger_mutex;
 
 struct list_head floors[num_floors];
+struct list_head elevator_passengers;
 
 typedef struct passenger {
   struct list_head floor;
@@ -47,9 +48,22 @@ typedef struct passenger {
   int type;
 } Passenger;
 
+struct thread_parameter {
+  struct task_struct *kthread;
+};
+
+struct thread_parameter thread1;
+
+int elevator_run(void *data);
+
+void thread_init_parameter(struct thread_parameter *param) {
+  param->kthread = kthread_run(elevator_run, param, "elevator_thread");
+}
 
 extern long (*STUB_start_elevator)(void);
 long start_elevator(void) {
+  thread_init_parameter(&thread1);
+  current_state = IDLE;
   printk(KERN_NOTICE "Elevator started!\n");
   return 0;
 }
@@ -57,6 +71,13 @@ long start_elevator(void) {
 extern long(*STUB_issue_request)(int, int, int);
 long issue_request(int start_floor, int destination_floor, int type) {
   printk(KERN_NOTICE "Request issued!\n");
+  /*if(start_floor < 1 || start_floor > 10)
+    return 1;
+  if(destination_floor < 1 || destination_floor > 10)
+    return 1;
+  if(type > 0 || type < 1)
+    return 1;
+  */
   Passenger *pass = kmalloc(sizeof(Passenger) * 1, __GFP_RECLAIM);
   pass->start_floor = start_floor;
   pass->destination_floor = destination_floor;
@@ -64,7 +85,16 @@ long issue_request(int start_floor, int destination_floor, int type) {
 
   mutex_lock_interruptible(&passenger_mutex);
 
+  passengers_waiting++;
   list_add_tail(&pass->floor, &floors[start_floor-1]);
+  if(elevator_destination_floor == -1){
+    elevator_destination_floor = start_floor;
+    if (current_floor < elevator_destination_floor) {
+      direction = UP;
+    } else {
+      direction = DOWN;
+    }
+  }
 
   mutex_unlock(&passenger_mutex);
   printk(KERN_NOTICE "Passenger added: start=%d, dest=%d, type=%d\n", start_floor, destination_floor, type);
@@ -73,37 +103,93 @@ long issue_request(int start_floor, int destination_floor, int type) {
 
 extern long (*STUB_stop_elevator)(void);
 long stop_elevator(void) {
+  kthread_stop(thread1.kthread);
   printk(KERN_NOTICE "Elevator stopped!\n");
+  current_state = OFFLINE;
   return 0;
 }
 
 /**********************************************************/
 //run thread
-/*
+
 int load_check(void){
   Passenger* pass;
   struct list_head *pos, *q;
-
+  int passengers_added = 0;
   if(current_load != 10){
-    mutex_lock_interruptible(&waiting_mutex);
+    mutex_lock_interruptible(&passenger_mutex);
     list_for_each_safe(pos, q, &floors[current_floor]) {
       pass = list_entry(pos, Passenger, floor);
-      if(pass->type == 0){
-        if(status == 1){
-          return 0;
+      if(current_load < 10) {// add passengers to the elevator whose destination floor aligns with the direction of travel
+        if (pass->type == 0) { // HUMAN PASSENGERS
+          if (elevator_status == 1) {
+            // elevator is infected, do nothing
+          } else {
+            // if elevator is safe, check the floors
+            if(direction == UP && pass->destination_floor > current_floor){
+              //if elevator is going up and so is the passenger, add to elevator
+              if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is higher, set new destination floor
+                elevator_destination_floor = pass->destination_floor;
+              
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+            } else if (direction == DOWN && pass->destination_floor < current_floor) {
+              // if elevator is going down and so is the passenger, add to elevator
+              if(pass->destination_floor < elevator_destination_floor) //if the passenger destination floor is lower, set new destination floor
+                elevator_destination_floor = pass->destination_floor;
+
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+            }
+          }
+        } else { //INFECTED PASSENGERS
+          // if passenger is infected, check the destination floors.
+          if(direction == UP && pass->destination_floor > current_floor){
+              //if elevator is going up and so is the passenger, add to elevator
+              if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is higher, set new destination floor
+                elevator_destination_floor = pass->destination_floor;
+              
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              elevator_status = 1; //set elevator status to infected
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+            } else if (direction == DOWN && pass->destination_floor < current_floor) {
+              // if elevator is going down and so is the passenger, add to elevator
+              if(pass->destination_floor > elevator_destination_floor) //if the passenger destination floor is lower, set new destination floor
+                elevator_destination_floor = pass->destination_floor;
+
+              list_add_tail(&pass->floor, &elevator_passengers);
+              passengers_added++;
+              current_load++;
+              passengers_waiting--;
+              elevator_status = 1; //set elevator status to infected
+              printk(KERN_NOTICE "Passenger added to elevator: start=%d, dest=%d, type=%d\n", pass->start_floor, pass->destination_floor, pass->type);
+              printk(KERN_NOTICE "Loading Passenger: %d %d %d", pass->start_floor, pass->destination_floor, pass->type);
+              list_del(pos);
+            }
         }
       }
-      mutex_unlock(&waiting_mutex);
-      return 1;
-      if(pass->destination_floor == current_floor){
-        mutex_unlock(&passenger_mutex);
-        return 1;
-      }
+      
     }
-    mutex_unlock(&waiting_mutex);
+    mutex_unlock(&passenger_mutex);
   }
-  return 0;
+  return passengers_added;
 }
+/*
 
 int unload_check(void){
   Passenger* pass;
@@ -132,7 +218,7 @@ void load(int floor){
     pass->destination_floor = wpass->destination_floor;
     pass->type = wpass->type;
     if(pass->type == 1){
-      status == 1;
+      elevator_status == 1;
     }
     mutex_lock_interruptible(&passenger_mutex);
     list_add_tail(&pass, &floors);
@@ -159,25 +245,71 @@ void unload(void){
   }
   mutex_unlock(&passenger_mutex);
   if(current_load == 0){
-    status = 0;
+    elevator_status = 0;
   }
   return;
 }
+*/
 
 int elevator_run(void *data){
+  printk(KERN_NOTICE "Inside elevator_run");
   while(!kthread_should_stop()){
-    switch (current_state){
+    if (passengers_waiting != 0) {
+      printk(KERN_NOTICE "Checking for passengers on floor: %d \n", current_floor);
+      current_state = LOADING;
+      printk(KERN_NOTICE "Loaded %d passengers on floor %d \n", load_check(), current_floor);
+      ssleep(1);
+      //unload();
+
+
+      if (current_floor == elevator_destination_floor){
+         printk(KERN_NOTICE "Changing direction:\n");
+        if(direction == UP) {
+          direction = DOWN;
+          printk(KERN_NOTICE "DOWN \n");
+        } else {
+          direction = UP;
+          printk(KERN_NOTICE "UP \n");
+        }
+      }
+
+      //increment floor
+      if(direction == UP) {
+        current_state = UP;
+        if (current_floor < 10){
+          current_floor++;
+        } else {
+          direction = DOWN;
+        }
+        ssleep(2);
+      } else {
+        current_state = DOWN;
+        if (current_floor > 0){
+          current_floor--;
+        } else {
+          direction = UP;
+        }
+        ssleep(2);
+      }
+    } else {
+      ssleep(5);
+      current_state = IDLE;
+      elevator_destination_floor = -1;
+    }
+
+
+    /*switch (current_state){
       case OFFLINE:
         break;
       case IDLE:
-        //IDLE: check for load, set current_state, set next_state to up
+        //IDLE: check for load, set current_state, set direction to up
         if(load_check() == 1){
           current_state = LOADING;
         }
         else{
           current_state = UP;
         }
-        next_state = UP;
+        direction = UP;
         break;
       case LOADING:
         ssleep(1);
@@ -185,24 +317,24 @@ int elevator_run(void *data){
         if(load_check() == 1){
           load(current_floor);
         }
-        current_state = next_state;
+        current_state = direction;
         if(current_state == UP){
           if(current_floor == 10){
             current_state = DOWN;
-            next_state = DOWN;
+            direction = DOWN;
           }
         }
         else if(current_state == DOWN){
           if(current_floor == 1){
             current_state = UP;
-            next_state = UP;
+            direction = UP;
           }
         }
         break;
       case UP:
         if(current_floor == 10){
           current_state = DOWN;
-          next_state = DOWN;
+          direction = DOWN;
         }else{
           ssleep(2);
           current_floor = current_floor + 1;
@@ -214,7 +346,7 @@ int elevator_run(void *data){
       case DOWN:
         if(current_floor == 1){
           current_state = UP;
-          next_state = UP;
+          direction = UP;
         }else{
           ssleep(2);
           current_floor = current_floor - 1;
@@ -224,11 +356,11 @@ int elevator_run(void *data){
         }
         //idle check?
         break;
-    }
+    }*/
   }
   return 0;
 }
-*/
+
 
 /*******************************************************************/
 //proc file functions
@@ -272,11 +404,11 @@ ssize_t proc_read(struct file *sp_file, char __user *buff, size_t size, loff_t *
        break;
      }
    strcat(message, sub);
-   if(status == 1){     //status to string
-     sprintf(sub, "Eleavtor status: %s\n", current_state);
+   if(elevator_status == 1){     //elevator_status to string
+     sprintf(sub, "Eleavtor elevator_status: %s\n", current_state);
    }
    else{
-     sprintf(sub, "Eleavtor status: Not infected\n");
+     sprintf(sub, "Eleavtor elevator_status: Not infected\n");
    }
    strcat(message, sub);
    sprintf(sub, "Current Floor: %d\nNumber of passengers: %d\n", current_floor,current_load);
@@ -352,9 +484,9 @@ static int elevator_init(void) {
   fops.read = proc_read;
   fops.release = proc_release;
 
-  status = 0;     //for not infected
+  elevator_status = 0;     //for not infected
   current_state = OFFLINE;  //initialize states
-  next_state = UP;
+  direction = UP;
   current_floor = 1;
   current_load = 0;
   passengers_waiting = 0;
@@ -363,6 +495,7 @@ static int elevator_init(void) {
   for (ind = 0; ind < num_floors; ind++){
     INIT_LIST_HEAD(&floors[ind]);
   }
+  INIT_LIST_HEAD(&elevator_passengers);
   mutex_init(&passenger_mutex);
   if(!proc_create(MODULE_NAME, PERMS, NULL, &fops)){
        printk(KERN_WARNING "Error: proc_create \n");
@@ -384,6 +517,9 @@ static void elevator_exit(void) {
       kfree(pass);
     }
   }
+  if (current_state != OFFLINE)
+    stop_elevator();
+
   mutex_destroy(&passenger_mutex);
   remove_proc_entry(MODULE_NAME, NULL);
   STUB_start_elevator = NULL;
