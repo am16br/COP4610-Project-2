@@ -1,25 +1,11 @@
-//compile: /usr/src/my_timer > sudo make
-//load module: /usr/src/my_timer > sudo insmod my_timer.ko
-//check module is loaded: > lsmod | grep my_timer
-//check kernal log: > dmesg
-//unload kernal module: > sudo rmmod my_timer
-
-#include <linux/init.h>		//modules
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <asm/semaphore.h>	//locks
-#include <linux.list.h>		//linked lists
-#include <linux/string.h>	//string functions
 #include <linux/proc_fs.h>//file system calls
 #include <linux/uaccess.h>//memory copy from kernel <-> userspace
+#include <linux/time.h>
 
-MODULE_LICENSE("dual BSD/GPL");
-
-static struct file_operations procfile_fops = {
-	.owner = THIS_MODULE,
-	.read = procfile_read,             //fill in callbacks to read/write functions
-	.write = procfile_write,
-};
+MODULE_LICENSE("Dual BSD/GPL");
 
 #define BUF_LEN 100     //max length of read/write message
 
@@ -27,78 +13,80 @@ static struct proc_dir_entry* proc_entry;//pointer to proc entry
 
 static char msg[BUF_LEN];//buffer to store read/write message
 static int procfs_buf_len;//variable to hold length of message
+static struct timespec my_current_time, my_elapsed_time;
 
-//void * kmalloc (size_t size, gfp_t flags);
-//char_ptr = kmalloc (sizeof(char) * 20, __GFP_RECLAIM);
 
-//READ
-static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_t *ppos)
-{
-printk(KERN_INFO "proc_read\n");
-procfs_buf_len = strlen(msg);
+static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_t *ppos){
+	printk(KERN_INFO "proc_read\n");
 
-//check for last access time
-if (*ppos > 0 || count < procfs_buf_len)    //check if data already read and if space in user buffer
-	return 0;
-if (copy_to_user(ubuf, msg, procfs_buf_len))    //send data to user buffer
-	return -EFAULT;
+	if (my_current_time.tv_sec != 0) {
+		my_elapsed_time = current_kernel_time();
+		my_elapsed_time.tv_sec -= my_current_time.tv_sec;
+		my_elapsed_time.tv_nsec -= my_current_time.tv_nsec;
+		if(my_elapsed_time.tv_nsec < 0) {
+			my_elapsed_time.tv_sec -= 1;
+			my_elapsed_time.tv_nsec += 1000000000;
+		}
+	}
 
-*ppos = procfs_buf_len;//update position
+	my_current_time = current_kernel_time();
+	printk(KERN_INFO "current time: %d.%d", (int)my_current_time.tv_sec, (int)my_current_time.tv_nsec);
 
-printk(KERN_INFO "gave to user %s\n", msg);
+	if (my_elapsed_time.tv_sec == 0) {
+		printk(KERN_INFO "elapsed time: %d.%d", (int)my_elapsed_time.tv_sec, (int)my_elapsed_time.tv_nsec);
+	}
 
-return procfs_buf_len;     //return number of characters read
+	procfs_buf_len = strlen(msg);
+	if (*ppos > 0 || count < procfs_buf_len)    //check if data already read and if space in user buffer
+		return 0;
+		
+	if (copy_to_user(ubuf, msg, procfs_buf_len))    //send data to user buffer
+		return -EFAULT;
+		
+	*ppos = procfs_buf_len;//update position
+	
+	printk(KERN_INFO "gave to user %s\n", msg);
+	
+	return procfs_buf_len;     //return number of characters read
 }
 
-//write
 static ssize_t procfile_write(struct file* file, const char * ubuf, size_t count, loff_t* ppos)
 {
-printk(KERN_INFO "proc_write\n");
-//("current time: %s", current_kernel_time());
-//("elapsed time: %s", current_kernel_time()-access_time);
-
-//write min(user message size, buffer length) characters
-if (count > BUF_LEN)
-	procfs_buf_len = BUF_LEN;
-else
-	procfs_buf_len = count;
-
-copy_from_user(msg, ubuf, procfs_buf_len);
-
-printk(KERN_INFO "got from user: %s\n", msg);
-
-return procfs_buf_len;
+	printk(KERN_INFO "proc_write\n");
+	
+	//write min(user message size, buffer length) characters
+	if (count > BUF_LEN)
+		procfs_buf_len = BUF_LEN;
+	else
+		procfs_buf_len = count;
+		
+	copy_from_user(msg, ubuf, procfs_buf_len);
+	printk(KERN_INFO "got from user: %s\n", msg);
+	return procfs_buf_len;
 }
 
-//memcopy-- Kernal -> User
-unsigned long copy_to_user (void __user *to, const void *from, unsigned long size)
-//User -> Kernal
-unsigned long copy_from_user (void *to, const void __user* from, unsigned long size)
+static struct file_operations procfile_fops = {
+	.owner = THIS_MODULE,
+	.read = procfile_read,             //fill in callbacks to read/write functions
+	.write = procfile_write
+};
 
-
-/******************************************/
-static int timer_init(void)
-{
-	double access_time = current_kernel_time();
-
-	P(insmod);	//my_timer loaded
-	//create proc entry: /proc/timer
+static int hello_init(void){
+	//proc_create(filename, permissions, parent, pointer to fops)
 	proc_entry = proc_create("timer", 0666, NULL, &procfile_fops);
-	if(proc_entry == NULL)
+	
+	if (proc_entry == NULL)
 		return -ENOMEM;
-	V(rrmod);	//my_timer unloaded
+	
+
 
 	return 0;
 }
-module_init(timer_init);
 
-static int timer_exit(void)
-{
-	P(rrmod);      //my_timer unloaded
-        //proc/timer removed
+static void hello_exit(void){
 	proc_remove(proc_entry);
-	V(insmod);       //my_timer loaded
-
 	return;
 }
-module_exit(timer_exit);
+
+module_init(hello_init);
+module_exit(hello_exit);
