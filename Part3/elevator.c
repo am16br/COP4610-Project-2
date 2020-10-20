@@ -242,7 +242,7 @@ int elevator_run(void *data){
         ssleep(2);
       } else {
         current_state = DOWN;
-        if (current_floor > 0){
+        if (current_floor > 1){
            printk(KERN_NOTICE "decrementing floor");
           current_floor--;
         } else {
