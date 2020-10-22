@@ -17,7 +17,6 @@ static struct timespec my_current_time, my_elapsed_time;
 
 
 static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_t *ppos){
-	printk(KERN_INFO "proc_read\n");
 
 	if (my_current_time.tv_sec != 0) {
 		my_elapsed_time = current_kernel_time();
@@ -35,33 +34,28 @@ static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_
 	if (my_elapsed_time.tv_sec == 0) {
 		printk(KERN_INFO "elapsed time: %d.%d", (int)my_elapsed_time.tv_sec, (int)my_elapsed_time.tv_nsec);
 	}
+	sprintf(msg, "current time: %d.%d\nelapsed time: %d.%d\n",(int)my_current_time.tv_sec, (int)my_current_time.tv_nsec,(int)my_elapsed_time.tv_sec, (int)my_elapsed_time.tv_nsec);
 
 	procfs_buf_len = strlen(msg);
 	if (*ppos > 0 || count < procfs_buf_len)    //check if data already read and if space in user buffer
 		return 0;
-		
+
 	if (copy_to_user(ubuf, msg, procfs_buf_len))    //send data to user buffer
 		return -EFAULT;
-		
+
 	*ppos = procfs_buf_len;//update position
-	
-	printk(KERN_INFO "gave to user %s\n", msg);
-	
+
 	return procfs_buf_len;     //return number of characters read
 }
 
 static ssize_t procfile_write(struct file* file, const char * ubuf, size_t count, loff_t* ppos)
 {
-	printk(KERN_INFO "proc_write\n");
-	
 	//write min(user message size, buffer length) characters
 	if (count > BUF_LEN)
 		procfs_buf_len = BUF_LEN;
 	else
 		procfs_buf_len = count;
-		
 	copy_from_user(msg, ubuf, procfs_buf_len);
-	printk(KERN_INFO "got from user: %s\n", msg);
 	return procfs_buf_len;
 }
 
@@ -74,11 +68,9 @@ static struct file_operations procfile_fops = {
 static int hello_init(void){
 	//proc_create(filename, permissions, parent, pointer to fops)
 	proc_entry = proc_create("timer", 0666, NULL, &procfile_fops);
-	
+
 	if (proc_entry == NULL)
 		return -ENOMEM;
-	
-
 
 	return 0;
 }
