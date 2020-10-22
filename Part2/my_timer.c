@@ -1,10 +1,15 @@
 #include <linux/init.h>
-#include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/proc_fs.h>//file system calls
-#include <linux/uaccess.h>//memory copy from kernel <-> userspace
-#include <linux/time.h>
-
+#include <linux/module.h>
+#include <linux/linkage.h>
+#include <linux/proc_fs.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/uaccess.h>
+#include <linux/kthread.h>
+#include <linux/delay.h>
+#include <linux/sched.h>
+#include <linux/mutex.h>
 MODULE_LICENSE("Dual BSD/GPL");
 
 #define BUF_LEN 100     //max length of read/write message
@@ -18,6 +23,8 @@ static struct timespec my_current_time, my_elapsed_time;
 
 static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_t *ppos){
 	printk(KERN_INFO "proc_read\n");
+	
+	char *sub = kmalloc(sizeof(char)*200, __GFP_RECLAIM);
 
 	if (my_current_time.tv_sec != 0) {
 		my_elapsed_time = current_kernel_time();
@@ -31,9 +38,11 @@ static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_
 
 	my_current_time = current_kernel_time();
 	printk(KERN_INFO "current time: %d.%d", (int)my_current_time.tv_sec, (int)my_current_time.tv_nsec);
-
+	sprintf(msg, "current time: %d.%d\n", (int)my_current_time.tv_sec, (int)my_current_time.tv_nsec);
 	if (my_elapsed_time.tv_sec == 0) {
 		printk(KERN_INFO "elapsed time: %d.%d", (int)my_elapsed_time.tv_sec, (int)my_elapsed_time.tv_nsec);
+		sprintf(sub, "elapsed time: %d.%d\n", (int)my_elapsed_time.tv_sec, (int)my_elapsed_time.tv_nsec);
+		strcat(msg, sub);
 	}
 
 	procfs_buf_len = strlen(msg);
@@ -46,7 +55,7 @@ static ssize_t procfile_read(struct file* file, char * ubuf, size_t count, loff_
 	*ppos = procfs_buf_len;//update position
 	
 	printk(KERN_INFO "gave to user %s\n", msg);
-	
+	kfree(sub);
 	return procfs_buf_len;     //return number of characters read
 }
 
